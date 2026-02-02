@@ -1,0 +1,24 @@
+{
+  "name": "subconver",
+  "version": "1.0.0",
+  "description": "Subscription Convertion From Sub-Store",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "author": "bestrui",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "ip-address": "^10.1.0",
+    "js-base64": "^3.7.8",
+    "json5": "^2.2.3",
+    "jsrsasign": "^11.1.0",
+    "lodash": "^4.17.23",
+    "static-js-yaml": "^1.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.6",
+    "@babel/preset-env": "^7.28.6",
+    "esbuild": "^0.27.2",
+    "peggy": "^2.0.1"
+  }
+}
