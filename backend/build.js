@@ -121,7 +121,7 @@ async function buildGojaES5() {
         entryPoints: ['src/core/proxy-utils/index.js'],
         outfile: 'dist/subconv.iife.js',
         bundle: true,
-        minify: false,
+        minify: true,
         platform: 'neutral',
         format: 'iife',
         globalName: 'SubConv',
@@ -159,14 +159,16 @@ async function buildGojaES5() {
 // ============================================
 function generateTypes() {
     const dtsPath = path.join(__dirname, 'dist', 'subconv.d.ts');
-    const dts = `export declare const ProxyUtils: {
+    const dts = `// ESM 导出
+export declare const ProxyUtils: {
   parse(raw: string): any[];
   produce(
     proxies: any[],
     targetPlatform: string,
     type?: string,
     opts?: Record<string, any>,
-  ): any;
+  ): string;
+  convert(raw: string, target: string): string;
 };
 `;
     fs.mkdirSync(path.dirname(dtsPath), { recursive: true });

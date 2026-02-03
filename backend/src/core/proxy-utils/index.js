@@ -175,9 +175,15 @@ ${list}`;
     }
 }
 
+function convert(raw, target) {
+    const proxies = parse(raw);
+    return produce(proxies, target);
+}
+
 export const ProxyUtils = {
     parse,
     produce,
+    convert,
 };
 
 function tryParse(parser, line) {
