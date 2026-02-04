@@ -1,17 +1,16 @@
 {
-	"name": "subworker",
-	"type": "module",
-	"version": "1.0.0",
+	"name": "ssw",
+	"version": "0.0.0",
+	"private": true,
 	"scripts": {
-		"dev": "wrangler dev --ip 0.0.0.0",
-		"deploy": "wrangler deploy --minify",
-		"build": "wrangler deploy --dry-run --outdir=dist --minify",
-		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
-	},
-	"dependencies": {
-		"hono": "^4.11.7"
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"cf-typegen": "wrangler types",
+		"secret": "wrangler secret  bulk .env.local"
 	},
 	"devDependencies": {
-		"wrangler": "^4.61.1"
+		"typescript": "^5.5.2",
+		"wrangler": "^4.62.0"
 	}
 }

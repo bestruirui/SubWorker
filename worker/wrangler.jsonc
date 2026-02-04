@@ -1,12 +1,25 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "subworker",
-	"main": "src/index.ts",
-	"compatibility_date": "2025-09-27",
-	"observability": {
-		"enabled": true
-	},
-	"vars": {
-		"SECRET": "subworker"
-	}
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "subworker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-27",
+  "migrations": [
+    {
+      "new_sqlite_classes": [
+        "SubWorkerDO"
+      ],
+      "tag": "v1"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "SubWorkerDO",
+        "name": "SubWorkerDO"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
 }

@@ -24,9 +24,17 @@ Cloudflare Worker 订阅转换工具，支持多种主流代理软件格式。
 
 ### 1. 部署方式
 
-1.  复制 [worker.js](../../blob/dist/worker.js) 的文件内容。
-2.  在 Cloudflare Workers 中新建一个 Worker，将代码粘贴覆盖并部署。
-3.  进入 Worker 的 **Settings** -> **Variables**，添加一个名为 `SECRET` 的环境变量，并设置自定义密钥（例如 `my-secret-token`）。
+1.  **Fork 本仓库**：点击右上角的 `Fork` 按钮，将仓库复制到你的 GitHub 账户下。
+
+2.  **设置 GitHub Secrets**：进入你 Fork 后的仓库，依次点击 **Settings** -> **Secrets and variables** -> **Actions** -> **New repository secret**，添加以下环境变量：
+
+    | Secret 名称 | 说明 |
+    | :--- | :--- |
+    | `SECRET` | 自定义访问密钥（例如 `my-secret-token`） |
+    | `CLOUDFLARE_API_TOKEN` | Cloudflare API Token（需具有 Workers 编辑权限） |
+    | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID |
+
+3.  **手动运行 Action**：进入 **Actions** 标签页，选择 `Deploy Worker` 工作流，点击 **Run workflow** 按钮执行部署。
 
 ### 2. 接口调用
 

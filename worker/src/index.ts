@@ -1,77 +1,128 @@
-import { Hono } from "hono";
-import { ProxyUtils } from "@subconv"
+import { ProxyUtils } from "@subconv";
 
+type RouteContext = {
+	request: Request;
+	url: URL;
+	params: Record<string, string>;
+	env: Env;
+};
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+type RouteHandler = (ctx: RouteContext) => Promise<Response> | Response;
 
-app.get("/:token/sub", async (c) => {
-  const token = c.req.param("token");
-  if (c.env.SECRET && c.env.SECRET !== token) {
-    return c.notFound();
-  }
+type Route = {
+	pattern: URLPattern;
+	methods: string[];
+	handler: RouteHandler;
+};
 
-  const { target, url } = c.req.query();
-  const urls = url ? (url as string).split("|") : [];
+/**
+ * Fetch and parse proxies from multiple URLs
+ */
+async function fetchAndParseProxies(urls: string[]) {
+	const results = await Promise.all(
+		urls.map(async (u) => {
+			const res = await fetch(u);
+			const text = await res.text();
+			return ProxyUtils.parse(text);
+		}),
+	);
+	return results.flat();
+}
 
-  const mid = (
-    await Promise.all(
-      urls.map(async (u) => {
-        const res = await fetch(u);
-        const text = await res.text();
-        return ProxyUtils.parse(text);
-      })
-    )
-  ).flat();
+/**
+ * Core logic lives inside Durable Object.
+ * Worker entry just forwards requests to the DO.
+ */
+export class SubWorkerDO {
+	private readonly env: Env;
+	private readonly routes: Route[];
 
-  const result = ProxyUtils.produce(mid, target as string);
-  return c.text(result);
-});
+	constructor(state: DurableObjectState, env: Env) {
+		this.env = env;
+		this.routes = this.buildRoutes();
+	}
 
-app.post("/:token/sub", async (c) => {
-  const token = c.req.param("token");
-  if (c.env.SECRET && c.env.SECRET !== token) {
-    return c.notFound();
-  }
+	private buildRoutes(): Route[] {
+		return [
+			{
+				pattern: new URLPattern({ pathname: "/:token/sub" }),
+				methods: ["GET"],
+				handler: async ({ url }) => {
+					const target = url.searchParams.get("target") ?? "";
+					const urlParam = url.searchParams.get("url") ?? "";
+					const urls = urlParam ? urlParam.split("|").filter(Boolean) : [];
 
-  const body = await c.req.json();
-  const { urls, client } = body as { urls: string[], client: string };
+					const proxies = await fetchAndParseProxies(urls);
+					const result = ProxyUtils.produce(proxies, target);
 
-  const mid = (
-    await Promise.all(
-      urls.map(async (u) => {
-        const res = await fetch(u);
-        const text = await res.text();
-        return ProxyUtils.parse(text);
-      })
-    )
-  ).flat();
+					return new Response(result, {
+						status: 200,
+						headers: { "content-type": "text/plain; charset=utf-8" },
+					});
+				},
+			},
+			{
+				pattern: new URLPattern({ pathname: "/:token/sub" }),
+				methods: ["POST"],
+				handler: async ({ request }) => {
+					const body = (await request.json()) as { urls: string[]; client: string };
+					const { urls, client } = body;
 
-  var result: any = {};
-  const par_res = ProxyUtils.produce(mid, client as string);
-  result['par_res'] = par_res;
-  return c.json({
-    status: 'success',
-    data: result,
-  }, 200);
-});
+					const proxies = await fetchAndParseProxies(urls);
+					const par_res = ProxyUtils.produce(proxies, client);
 
-app.post("/:token/api/proxy/parse", async (c) => {
-  const token = c.req.param("token");
-  if (c.env.SECRET && c.env.SECRET !== token) {
-    return c.notFound();
-  }
-  const body = await c.req.json();
-  const { data, client } = body;
-  const proxies = ProxyUtils.parse(data);
-  var result: any = {};
-  const par_res = ProxyUtils.produce(proxies, client as string);
-  result['par_res'] = par_res;
-  return c.json({
-    status: 'success',
-    data: result,
-  }, 200);
-});
+					return Response.json({ status: "success", data: { par_res } }, { status: 200 });
+				},
+			},
+			{
+				pattern: new URLPattern({ pathname: "/:token/api/proxy/parse" }),
+				methods: ["POST"],
+				handler: async ({ request }) => {
+					const body = (await request.json()) as { data: string; client: string };
+					const { data, client } = body;
+					const proxies = ProxyUtils.parse(data);
+					const par_res = ProxyUtils.produce(proxies, client);
+					return Response.json({ status: "success", data: { par_res } }, { status: 200 });
+				},
+			},
+		];
+	}
 
+	async fetch(request: Request): Promise<Response> {
+		const url = new URL(request.url);
+		const method = request.method.toUpperCase();
 
+		for (const route of this.routes) {
+			const match = route.pattern.exec(url);
+			if (!match) continue;
 
-export default app;
+			if (!route.methods.includes(method)) {
+				return new Response("Method Not Allowed", { status: 405 });
+			}
+
+			const ctx: RouteContext = {
+				request,
+				url,
+				params: match.pathname.groups as Record<string, string>,
+				env: this.env,
+			};
+			return route.handler(ctx);
+		}
+
+		return new Response("Not Found", { status: 404 });
+	}
+}
+
+export default {
+	async fetch(request, env): Promise<Response> {
+		const url = new URL(request.url);
+		const token = decodeURIComponent(url.pathname.split("/")[1] ?? "");
+
+		if (token !== env.SECRET) {
+			return new Response("Not Found", { status: 404 });
+		}
+
+		const stub = env.SubWorkerDO.getByName("global");
+		return stub.fetch(request);
+	},
+} satisfies ExportedHandler<Env>;

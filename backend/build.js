@@ -1,6 +1,5 @@
 const esbuild = require('esbuild');
 const peggy = require('peggy');
-const babel = require('@babel/core');
 const fs = require('fs');
 const path = require('path');
 
@@ -111,51 +110,7 @@ async function buildESM() {
 }
 
 // ============================================
-// Step 5: 构建 IIFE + ES5 版本
-// ============================================
-async function buildGojaES5() {
-    console.log('📦 Building IIFE+ES5 version...');
-
-    // 先用 esbuild 打包成 IIFE
-    await esbuild.build({
-        entryPoints: ['src/core/proxy-utils/index.js'],
-        outfile: 'dist/subconv.iife.js',
-        bundle: true,
-        minify: true,
-        platform: 'neutral',
-        format: 'iife',
-        globalName: 'SubConv',
-        mainFields: ['module', 'main'],
-        plugins: [peggyRedirectPlugin],
-        logLevel: 'info',
-    });
-
-    // 使用 Babel 转换为 ES5
-    console.log('🔧 Transforming to ES5 with Babel...');
-    const iifeCode = fs.readFileSync('dist/subconv.iife.js', 'utf-8');
-
-    const result = await babel.transformAsync(iifeCode, {
-        presets: [
-            ['@babel/preset-env', {
-                targets: { ie: '11' },
-                modules: false,
-            }]
-        ],
-        compact: true,
-        comments: false,
-    });
-
-    const gojaPath = path.join(__dirname, 'dist', 'subconv.es5.js');
-    fs.writeFileSync(gojaPath, result.code, 'utf-8');
-
-    // 删除临时文件
-    fs.unlinkSync('dist/subconv.iife.js');
-
-    console.log(`✅ Goja bundle generated: ${gojaPath}`);
-}
-
-// ============================================
-// Step 6: 生成类型定义
+// Step 5: 生成类型定义
 // ============================================
 function generateTypes() {
     const dtsPath = path.join(__dirname, 'dist', 'subconv.d.ts');
@@ -182,12 +137,10 @@ export declare const ProxyUtils: {
 (async () => {
     try {
         await buildESM();
-        await buildGojaES5();
         generateTypes();
         console.log('');
         console.log('⚡ Build complete! ⚡');
         console.log('  📄 dist/subconv.js      - ESM');
-        console.log('  📄 dist/subconv.es5.js  - IIFE+ES5');
         console.log('  📄 dist/subconv.d.ts    - TypeScript types');
     } catch (err) {
         console.error('Build failed:', err);
