@@ -26,6 +26,8 @@ export default function Surfboard_Producer() {
                 return http(proxy);
             case 'socks5':
                 return socks5(proxy);
+            case 'anytls':
+                return anytls(proxy);
             case 'wireguard-surge':
                 return wireguard(proxy);
         }
@@ -35,7 +37,29 @@ export default function Surfboard_Producer() {
     };
     return { produce };
 }
+function anytls(proxy) {
+    const result = new Result(proxy);
+    result.append(`${proxy.name}=${proxy.type},${proxy.server},${proxy.port}`);
+    result.appendIfPresent(`,password="${proxy.password}"`, 'password');
 
+    // tls verification
+    result.appendIfPresent(`,sni=${proxy.sni}`, 'sni');
+    result.appendIfPresent(
+        `,skip-cert-verify=${proxy['skip-cert-verify']}`,
+        'skip-cert-verify',
+    );
+
+    // tfo
+    result.appendIfPresent(`,tfo=${proxy.tfo}`, 'tfo');
+
+    // udp
+    result.appendIfPresent(`,udp-relay=${proxy.udp}`, 'udp');
+
+    // reuse
+    result.appendIfPresent(`,reuse=${proxy['reuse']}`, 'reuse');
+
+    return result.toString();
+}
 function shadowsocks(proxy) {
     const result = new Result(proxy);
     result.append(`${proxy.name}=${proxy.type},${proxy.server},${proxy.port}`);
@@ -61,12 +85,14 @@ function shadowsocks(proxy) {
             'salsa20',
             'chacha20',
             'chacha20-ietf',
+            '2022-blake3-aes-128-gcm',
+            '2022-blake3-aes-256-gcm',
         ].includes(proxy.cipher)
     ) {
         throw new Error(`cipher ${proxy.cipher} is not supported`);
     }
     result.append(`,encrypt-method=${proxy.cipher}`);
-    result.appendIfPresent(`,password=${proxy.password}`, 'password');
+    result.appendIfPresent(`,password="${proxy.password}"`, 'password');
 
     // obfs
     if (isPresent(proxy, 'plugin')) {

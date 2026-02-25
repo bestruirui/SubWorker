@@ -52,11 +52,6 @@ export default function Stash_Producer() {
                     return false;
                 } else if (
                     ['anytls'].includes(proxy.type) &&
-                    !opts['include-unsupported-proxy']
-                ) {
-                    return false;
-                } else if (
-                    ['anytls'].includes(proxy.type) &&
                     proxy.network &&
                     (!['tcp'].includes(proxy.network) ||
                         (['tcp'].includes(proxy.network) &&
@@ -305,6 +300,11 @@ export default function Stash_Producer() {
                     proxy['server-cert-fingerprint'] = proxy['tls-fingerprint'];
                 }
                 delete proxy['tls-fingerprint'];
+
+                if (proxy['underlying-proxy']) {
+                    proxy['dialer-proxy'] = proxy['underlying-proxy'];
+                }
+                delete proxy['underlying-proxy'];
 
                 if (isPresent(proxy, 'tls') && typeof proxy.tls !== 'boolean') {
                     delete proxy.tls;
