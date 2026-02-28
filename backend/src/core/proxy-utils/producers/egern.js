@@ -18,9 +18,9 @@ export default function Egern_Producer() {
                         'vmess',
                         'tuic',
                         'wireguard',
-                        // ...(opts['include-unsupported-proxy']
-                        //     ? ['wireguard']
-                        //     : []),
+                        ...(opts['include-unsupported-proxy']
+                            ? ['anytls']
+                            : []),
                     ].includes(proxy.type) ||
                     (proxy.type === 'ss' &&
                         ((proxy.plugin === 'obfs' &&
@@ -64,11 +64,23 @@ export default function Egern_Producer() {
                         !['http', 'ws', 'tcp'].includes(proxy.network) &&
                         proxy.network) ||
                     (proxy.type === 'vless' &&
-                        !['http', 'ws', 'tcp'].includes(proxy.network) &&
-                        proxy.network) ||
+                        ((!['http', 'ws', 'tcp'].includes(proxy.network) &&
+                            proxy.network) ||
+                            (typeof proxy.flow !== 'undefined' &&
+                                !['xtls-rprx-vision', ''].includes(
+                                    proxy.flow,
+                                )))) ||
                     (proxy.type === 'tuic' &&
                         proxy.token &&
                         proxy.token.length !== 0)
+                ) {
+                    return false;
+                } else if (
+                    ['anytls'].includes(proxy.type) &&
+                    proxy.network &&
+                    (!['tcp'].includes(proxy.network) ||
+                        (['tcp'].includes(proxy.network) &&
+                            proxy['reality-opts']))
                 ) {
                     return false;
                 } else if (
@@ -202,6 +214,20 @@ export default function Egern_Producer() {
                         sni: proxy.sni,
                         skip_tls_verify: proxy['skip-cert-verify'],
                         websocket: proxy.websocket,
+                    };
+                } else if (proxy.type === 'anytls') {
+                    proxy = {
+                        type: 'anytls',
+                        name: proxy.name,
+                        server: proxy.server,
+                        port: proxy.port,
+                        password: proxy.password,
+                        tfo: proxy.tfo || proxy['fast-open'],
+                        udp_relay:
+                            proxy.udp || proxy.udp_relay || proxy.udp_relay,
+                        next_hop: proxy.next_hop,
+                        sni: proxy.sni,
+                        skip_tls_verify: proxy['skip-cert-verify'],
                     };
                 } else if (proxy.type === 'vmess') {
                     // Egern：传输层，支持 ws/wss/http1/http2/tls，不配置则为 tcp
@@ -353,14 +379,8 @@ export default function Egern_Producer() {
                                 reality,
                             },
                         };
-                        if (typeof proxy.flow !== 'undefined') {
-                            if (!['xtls-rprx-vision'].includes(proxy.flow)) {
-                                throw new Error(
-                                    `VLESS flow(${proxy.flow}) is not supported`,
-                                );
-                            }
-                        }
                         flow = proxy.flow;
+                        if (flow === '') flow = undefined;
                     }
                     proxy = {
                         type: 'vless',
@@ -430,6 +450,7 @@ export default function Egern_Producer() {
                         'trojan',
                         'vless',
                         'vmess',
+                        'anytls',
                     ].includes(original.type)
                 ) {
                     if (isPresent(original, 'shadow-tls-password')) {
@@ -465,6 +486,7 @@ export default function Egern_Producer() {
                         'wireguard',
                         'tuic',
                         'hysteria2',
+                        'anytls',
                     ].includes(original.type)
                 ) {
                     if (
