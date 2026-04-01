@@ -5,8 +5,6 @@ const path = require('node:path');
 
 const CLI_FLAGS = new Set(process.argv.slice(2));
 const SHOULD_BUILD_BUNDLE = !CLI_FLAGS.has('--parsers-only');
-const PEGGY_IMPORT_SOURCE_RE =
-    /(from\s+['"])\.\/peggy\/(?!generated\/)([^'"]+)(['"])/g;
 const HELP_TEXT = `Usage: node scripts/build.js [--parsers-only]
 
 --parsers-only   Only generate pre-compiled Peggy parsers.
@@ -52,22 +50,64 @@ function prepareBuildWorkspace() {
     fs.copyFileSync(PATHS.rootTsconfigPath, PATHS.buildTsconfigPath);
 }
 
-function getPeggyGrammarFiles() {
-    const grammarFiles = fs
+/**
+ * Get peggy source .js files that contain embedded grammars.
+ * These files follow the pattern:
+ *   import peggy from 'peggy';
+ *   const grammars = String.raw`...`;
+ *   ...
+ *   peggy.generate(grammars);
+ */
+function getPeggySourceFiles() {
+    const jsFiles = fs
         .readdirSync(PATHS.buildPeggyDir)
-        .filter((fileName) => fileName.endsWith('.peg'))
+        .filter((fileName) => fileName.endsWith('.js'))
         .sort();
 
-    if (grammarFiles.length === 0) {
-        throw new Error(`No .peg files found in ${PATHS.buildPeggyDir}`);
+    if (jsFiles.length === 0) {
+        throw new Error(
+            `No .js files found in ${PATHS.buildPeggyDir}`,
+        );
     }
 
-    return grammarFiles;
+    return jsFiles;
 }
 
-function createParserModuleCode(pegFileName, parserSource) {
+/**
+ * Extract the grammar string from a peggy source .js file.
+ * The grammar is embedded between String.raw` and the closing backtick.
+ */
+function extractGrammar(source) {
+    const startMarker = 'String.raw`';
+    const startIdx = source.indexOf(startMarker);
+    if (startIdx === -1) {
+        return null;
+    }
+
+    const grammarStart = startIdx + startMarker.length;
+
+    // Find the closing backtick - need to handle escaped backticks
+    let depth = 0;
+    let i = grammarStart;
+    while (i < source.length) {
+        if (source[i] === '\\') {
+            i += 2; // skip escaped char
+            continue;
+        }
+        if (source[i] === '`') {
+            if (depth === 0) {
+                return source.substring(grammarStart, i);
+            }
+        }
+        i++;
+    }
+
+    return null;
+}
+
+function createParserModuleCode(jsFileName, parserSource) {
     return [
-        `// Auto-generated from ${pegFileName} - DO NOT EDIT`,
+        `// Auto-generated from ${jsFileName} - DO NOT EDIT`,
         parserSource,
         '',
         'let cachedParser = null;',
@@ -82,47 +122,48 @@ function createParserModuleCode(pegFileName, parserSource) {
     ].join('\n');
 }
 
-function compilePeggyParser(pegFileName) {
-    const grammarPath = path.join(PATHS.buildPeggyDir, pegFileName);
-    const outputPath = path.join(
-        PATHS.buildGeneratedDir,
-        `${path.parse(pegFileName).name}.js`,
-    );
-    const parserSource = peggy.generate(fs.readFileSync(grammarPath, 'utf-8'), {
+function compilePeggyFromSource(jsFileName) {
+    const sourcePath = path.join(PATHS.buildPeggyDir, jsFileName);
+    const baseName = path.parse(jsFileName).name;
+    const outputPath = path.join(PATHS.buildGeneratedDir, `${baseName}.js`);
+
+    const source = fs.readFileSync(sourcePath, 'utf-8');
+    const grammar = extractGrammar(source);
+
+    if (!grammar) {
+        throw new Error(
+            `Could not extract grammar from ${jsFileName}. ` +
+            `Expected a String.raw\` template literal.`,
+        );
+    }
+
+    const parserSource = peggy.generate(grammar, {
         output: 'source',
         format: 'es',
     });
 
     fs.writeFileSync(
         outputPath,
-        createParserModuleCode(pegFileName, parserSource),
+        createParserModuleCode(jsFileName, parserSource),
         'utf-8',
     );
     console.log(`  Generated: ${path.relative(PATHS.rootDir, outputPath)}`);
 }
 
-function compilePeggyParsers() {
-    prepareBuildWorkspace();
-    ensureDir(PATHS.buildGeneratedDir);
-
-    const grammarFiles = getPeggyGrammarFiles();
-
-    console.log('Pre-compiling Peggy grammars...');
-
-    for (const pegFileName of grammarFiles) {
-        compilePeggyParser(pegFileName);
-    }
-
-    rewriteParserIndexImports();
-    console.log(`Generated ${grammarFiles.length} parser modules.`);
-}
-
+/**
+ * Rewrite imports in parsers/index.js to point to pre-compiled generated modules
+ * instead of the runtime-compiled peggy source files.
+ *
+ * Transforms:
+ *   from './peggy/surge'  →  from './peggy/generated/surge'
+ *   from './peggy/loon'   →  from './peggy/generated/loon'
+ */
 function rewriteParserIndexImports() {
+    const PEGGY_IMPORT_RE =
+        /(from\s+['"])\.\/peggy\/(?!generated\/)([^'"]+)(['"])/g;
+
     const source = fs.readFileSync(PATHS.buildParsersIndexPath, 'utf-8');
-    const rewritten = source.replace(
-        PEGGY_IMPORT_SOURCE_RE,
-        '$1./peggy/generated/$2$3',
-    );
+    const rewritten = source.replace(PEGGY_IMPORT_RE, '$1./peggy/generated/$2$3');
 
     if (rewritten !== source) {
         fs.writeFileSync(PATHS.buildParsersIndexPath, rewritten, 'utf-8');
@@ -130,6 +171,22 @@ function rewriteParserIndexImports() {
             `  Rewired: ${path.relative(PATHS.rootDir, PATHS.buildParsersIndexPath)}`,
         );
     }
+}
+
+function compilePeggyParsers() {
+    prepareBuildWorkspace();
+    ensureDir(PATHS.buildGeneratedDir);
+
+    const sourceFiles = getPeggySourceFiles();
+
+    console.log('Pre-compiling Peggy grammars from embedded sources...');
+
+    for (const jsFileName of sourceFiles) {
+        compilePeggyFromSource(jsFileName);
+    }
+
+    rewriteParserIndexImports();
+    console.log(`Generated ${sourceFiles.length} parser modules.`);
 }
 
 async function buildNodeBundle() {

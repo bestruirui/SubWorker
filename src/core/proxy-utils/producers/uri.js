@@ -64,7 +64,14 @@ function vless(proxy) {
         extra = `&extra=${encodeURIComponent(proxy._extra)}`;
     }
     let mode = '';
-    if (proxy._mode) {
+    if (
+        ['xhttp'].includes(proxy.network) &&
+        proxy[`${proxy.network}-opts`]?.mode
+    ) {
+        mode = `&mode=${encodeURIComponent(
+            proxy[`${proxy.network}-opts`].mode,
+        )}`;
+    } else if (proxy._mode) {
         mode = `&mode=${encodeURIComponent(proxy._mode)}`;
     }
     let pqv = '';
@@ -807,7 +814,9 @@ export default function URI_Producer() {
                         ].includes(key)
                     ) {
                         if (['public-key'].includes(key)) {
-                            wireguardParams.push(`publickey=${proxy[key]}`);
+                            wireguardParams.push(
+                                `publickey=${encodeURIComponent(proxy[key])}`,
+                            );
                         } else if (['udp'].includes(key)) {
                             if (proxy[key]) {
                                 wireguardParams.push(`${key}=1`);
@@ -821,12 +830,18 @@ export default function URI_Producer() {
                 });
                 if (proxy.ip && proxy.ipv6) {
                     wireguardParams.push(
-                        `address=${proxy.ip}/32,${proxy.ipv6}/128`,
+                        `address=${encodeURIComponent(
+                            `${proxy.ip}/32,${proxy.ipv6}/128`,
+                        )}`,
                     );
                 } else if (proxy.ip) {
-                    wireguardParams.push(`address=${proxy.ip}/32`);
+                    wireguardParams.push(
+                        `address=${encodeURIComponent(`${proxy.ip}/32`)}`,
+                    );
                 } else if (proxy.ipv6) {
-                    wireguardParams.push(`address=${proxy.ipv6}/128`);
+                    wireguardParams.push(
+                        `address=${encodeURIComponent(`${proxy.ipv6}/128`)}`,
+                    );
                 }
                 result = `wireguard://${encodeURIComponent(
                     proxy['private-key'],

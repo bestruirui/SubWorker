@@ -829,12 +829,37 @@ function URI_VLESS() {
                 // mKCP 的伪装头部类型。当前可选值有 none / srtp / utp / wechat-video / dtls / wireguard。省略时默认值为 none，即不使用伪装头部，但不可以为空字符串。
                 proxy.headerType = params.headerType || 'none';
             }
-
-            if (params.mode) {
-                proxy._mode = params.mode;
-            }
             if (params.extra) {
                 proxy._extra = params.extra;
+            }
+            // 太麻烦了 暂时 extra 原封不动
+            // 单独解析一下
+            if (params.mode) {
+                if (['xhttp'].includes(proxy.network)) {
+                    let extra = {};
+                    try {
+                        extra = proxy._extra ? JSON.parse(proxy._extra) : {};
+                    } catch (e) {
+                        $.error(
+                            `Failed to parse extra field as JSON: ${proxy._extra}`,
+                        );
+                    }
+                    if (extra.downloadSettings) {
+                        $.error(
+                            'It is too complex to convert the downloadSettings in extra into the Mihomo format, so it is not supported.',
+                        );
+                    }
+                    proxy[`${proxy.network}-opts`] = {
+                        'no-grpc-header': extra['noGRPCHeader'],
+                        'x-padding-bytes': extra['xPaddingBytes'],
+                        // 'sc-max-each-post-bytes': extra['scMaxEachPostBytes'],
+                        // 'sc-min-posts-interval-ms': extra['scMinPostsIntervalMs'],
+                        mode: params.mode,
+                        ...proxy[`${proxy.network}-opts`],
+                    };
+                } else {
+                    proxy._mode = params.mode;
+                }
             }
         }
         if (params.encryption) {
@@ -1266,6 +1291,7 @@ function Clash_All() {
         }
         if (
             ![
+                'tailscale',
                 'trusttunnel',
                 'naive',
                 'anytls',
@@ -1656,10 +1682,16 @@ function Surge_Trojan() {
     return { name, test, parse };
 }
 
+const LOON_ONLY_OPTIONS =
+    /(^|,)\s*(fast-open|over-tls|tls-name|ip-mode|tls-cert-sha256|tls-pubkey-sha256)\s*=/i;
+
 function Surge_Http() {
     const name = 'Surge HTTP Parser';
     const test = (line) => {
-        return /^.*=\s*https?/.test(line.split(',')[0]);
+        return (
+            /^.*=\s*https?/.test(line.split(',')[0]) &&
+            !LOON_ONLY_OPTIONS.test(line)
+        );
     };
     const parse = (line) => getSurgeParser().parse(line);
     return { name, test, parse };
@@ -1668,7 +1700,10 @@ function Surge_Http() {
 function Surge_Socks5() {
     const name = 'Surge Socks5 Parser';
     const test = (line) => {
-        return /^.*=\s*socks5(-tls)?/.test(line.split(',')[0]);
+        return (
+            /^.*=\s*socks5(-tls)?/.test(line.split(',')[0]) &&
+            !LOON_ONLY_OPTIONS.test(line)
+        );
     };
     const parse = (line) => getSurgeParser().parse(line);
     return { name, test, parse };
