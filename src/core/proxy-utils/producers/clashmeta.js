@@ -1,4 +1,7 @@
-import { isPresent } from '@/core/proxy-utils/producers/utils';
+import {
+    isPresent,
+    produceProxyListOutput,
+} from '@/core/proxy-utils/producers/utils';
 
 const ipVersions = {
     dual: 'dual',
@@ -242,6 +245,7 @@ export default function ClashMeta_Producer() {
                 if (proxy['plugin-opts']?.tls) {
                     if (isPresent(proxy, 'skip-cert-verify')) {
                         proxy['plugin-opts']['skip-cert-verify'] =
+                            proxy['plugin-opts']['skip-cert-verify'] ||
                             proxy['skip-cert-verify'];
                     }
                 }
@@ -300,12 +304,7 @@ export default function ClashMeta_Producer() {
                 return proxy;
             });
 
-        return type === 'internal'
-            ? list
-            : 'proxies:\n' +
-                  list
-                      .map((proxy) => '  - ' + JSON.stringify(proxy) + '\n')
-                      .join('');
+        return produceProxyListOutput(list, type, opts);
     };
     return { type, produce };
 }

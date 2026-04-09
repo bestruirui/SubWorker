@@ -1,6 +1,7 @@
 import ClashMeta_Producer from './clashmeta';
 import $ from '@/core/app';
 import { isIPv4, isIPv6, isPlainObject } from '@/utils';
+import { normalizePluginMuxValue } from './utils';
 
 const ipVersions = {
     ipv4: 'ipv4_only',
@@ -244,6 +245,30 @@ const grpcParser = (proxy, parsedProxy) => {
     parsedProxy.transport = transport;
 };
 
+const normalizePemLines = (value, label) => {
+    const items = Array.isArray(value) ? value : [value];
+    const lines = [];
+
+    for (const item of items) {
+        const normalized = `${item}`
+            .trim()
+            .replace(/\\r\\n/g, '\n')
+            .replace(/\\n/g, '\n');
+        if (normalized === '') continue;
+
+        for (const line of normalized.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (trimmed !== '') lines.push(trimmed);
+        }
+    }
+
+    if (lines.length === 0) return undefined;
+    if (lines.some((line) => /^-----BEGIN [A-Za-z0-9 -]+-----$/.test(line))) {
+        return lines;
+    }
+    return [`-----BEGIN ${label}-----`, ...lines, `-----END ${label}-----`];
+};
+
 const tlsParser = (proxy, parsedProxy) => {
     if (proxy.tls) parsedProxy.tls.enabled = true;
     if (proxy.servername && proxy.servername !== '')
@@ -284,7 +309,11 @@ const tlsParser = (proxy, parsedProxy) => {
     } else if (proxy['ech-opts'] && isPlainObject(proxy['ech-opts'])) {
         parsedProxy.tls.ech = parsedProxy.tls.ech || {};
         parsedProxy.tls.ech.enabled = proxy['ech-opts'].enable;
-        parsedProxy.tls.ech.config = proxy['ech-opts'].config;
+        const echOptsConfig = proxy['ech-opts'].config;
+        if (Array.isArray(echOptsConfig) || typeof echOptsConfig === 'string') {
+            const config = normalizePemLines(echOptsConfig, 'ECH CONFIGS');
+            if (config) parsedProxy.tls.ech.config = config;
+        }
         parsedProxy.tls.ech.query_server_name =
             proxy['ech-opts']['query-server-name'];
         parsedProxy.tls.ech.config_path = proxy['ech-opts']['config-path'];
@@ -537,10 +566,14 @@ const ssParser = (proxy = {}) => {
                             )}`,
                         );
                         break;
-                    case 'mux':
-                        if (proxy['plugin-opts'].mux)
-                            parsedProxy.multiplex = { enabled: true };
+                    case 'mux': {
+                        const mux = normalizePluginMuxValue(
+                            proxy['plugin-opts'].mux,
+                        );
+                        if (mux) parsedProxy.multiplex = { enabled: true };
+                        optArr.push(`mux=${mux}`);
                         break;
+                    }
                     default:
                         optArr.push(`${k}=${proxy['plugin-opts'][k]}`);
                 }

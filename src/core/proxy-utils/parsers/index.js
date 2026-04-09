@@ -287,8 +287,14 @@ function URI_SS() {
             ).split(';');
             const params = {};
             for (const item of pluginInfo) {
-                const [key, val] = item.split('=');
-                if (key) params[key] = val || true; // some options like "tls" will not have value
+                const separatorIndex = item.indexOf('=');
+                if (separatorIndex === -1) {
+                    if (item) params[item] = true; // some options like "tls" will not have value
+                    continue;
+                }
+                const key = item.slice(0, separatorIndex);
+                const val = item.slice(separatorIndex + 1).replace(/\\=/g, '=');
+                if (key) params[key] = val || true;
             }
             switch (params.plugin) {
                 case 'obfs-local':
@@ -308,6 +314,13 @@ function URI_SS() {
                             getIfNotBlank(params['host']),
                         path: getIfNotBlank(params.path),
                         tls: getIfPresent(params.tls),
+                        sni: getIfPresent(params.sni),
+                        'skip-cert-verify': ['1', 'true', 1, true].includes(
+                            params['skip-cert-verify'],
+                        ),
+                        mux: /^\d+$/.test(params.mux)
+                            ? parseInt(params.mux, 10)
+                            : undefined,
                     };
                     break;
                 case 'shadow-tls': {
@@ -597,7 +610,7 @@ function URI_VMess() {
                         transportHost = parsedHost;
                     }
                     // eslint-disable-next-line no-empty
-                } catch (e) {}
+                } catch (e) { }
                 let transportPath = params.path;
 
                 // 补上默认 path
@@ -844,19 +857,75 @@ function URI_VLESS() {
                             `Failed to parse extra field as JSON: ${proxy._extra}`,
                         );
                     }
-                    if (extra.downloadSettings) {
+                    if (extra?.downloadSettings) {
                         $.error(
                             'It is too complex to convert the downloadSettings in extra into the Mihomo format, so it is not supported.',
                         );
                     }
-                    proxy[`${proxy.network}-opts`] = {
-                        'no-grpc-header': extra['noGRPCHeader'],
-                        'x-padding-bytes': extra['xPaddingBytes'],
-                        // 'sc-max-each-post-bytes': extra['scMaxEachPostBytes'],
-                        // 'sc-min-posts-interval-ms': extra['scMinPostsIntervalMs'],
-                        mode: params.mode,
+                    const xhttpOpts = {
                         ...proxy[`${proxy.network}-opts`],
+                        mode: params.mode,
                     };
+                    if (extra?.['noGRPCHeader'] === true) {
+                        xhttpOpts['no-grpc-header'] = true;
+                    }
+                    if (isNotBlank(extra?.['xPaddingBytes'])) {
+                        xhttpOpts['x-padding-bytes'] = extra['xPaddingBytes'];
+                    }
+                    const scMaxEachPostBytes =
+                        extra?.['scMaxEachPostBytes'];
+                    if (
+                        typeof scMaxEachPostBytes === 'string' ||
+                        typeof scMaxEachPostBytes === 'number'
+                    ) {
+                        const normalizedValue = `${scMaxEachPostBytes}`;
+                        if (/^\s*[1-9]\d*\s*$/.test(normalizedValue)) {
+                            xhttpOpts['sc-max-each-post-bytes'] = parseInt(
+                                normalizedValue,
+                                10,
+                            );
+                        } else {
+                            const rangeMatch = normalizedValue.match(
+                                /^\s*([1-9]\d*)\s*-\s*([1-9]\d*)\s*$/,
+                            );
+                            if (rangeMatch) {
+                                const lowerBound = parseInt(rangeMatch[1], 10);
+                                const upperBound = parseInt(rangeMatch[2], 10);
+
+                                if (upperBound >= lowerBound) {
+                                    xhttpOpts['sc-max-each-post-bytes'] =
+                                        upperBound;
+                                }
+                            }
+                        }
+                    }
+                    if (isPlainObject(extra?.xmux)) {
+                        const reuseSettings = {};
+                        const xmuxFieldMap = {
+                            maxConnections: 'max-connections',
+                            maxConcurrency: 'max-concurrency',
+                            cMaxReuseTimes: 'c-max-reuse-times',
+                            hMaxRequestTimes: 'h-max-request-times',
+                            hMaxReusableSecs: 'h-max-reusable-secs',
+                        };
+                        for (const [sourceKey, targetKey] of Object.entries(
+                            xmuxFieldMap,
+                        )) {
+                            const value = extra.xmux[sourceKey];
+                            if (typeof value === 'string' && value !== '') {
+                                reuseSettings[targetKey] = value;
+                            } else if (
+                                typeof value === 'number' &&
+                                Number.isFinite(value)
+                            ) {
+                                reuseSettings[targetKey] = `${value}`;
+                            }
+                        }
+                        if (Object.keys(reuseSettings).length > 0) {
+                            xhttpOpts['reuse-settings'] = reuseSettings;
+                        }
+                    }
+                    proxy[`${proxy.network}-opts`] = xhttpOpts;
                 } else {
                     proxy._mode = params.mode;
                 }
